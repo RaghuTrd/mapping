@@ -3,67 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.min.css" integrity="sha512-KJRB1wUfcipHY35z9dEE+Jqd+pGCuQ2JMZmQPAjwPjXuzz9oL1pZm2cd79vyUgHQxvb9sFQ6f05DIz0IqcG1Jw==" crossorigin="anonymous" 
-    referrerpolicy="no-referrer" />
+    <title>Real-Time Map with Search</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.min.css" integrity="sha512-KJRB1wUfcipHY35z9dEE+Jqd+pGCuQ2JMZmQPAjwPjXuzz9oL1pZm2cd79vyUgHQxvb9sFQ6f05DIz0IqcG1Jw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet-geosearch@3.3.2/dist/geosearch.css"
+    />
+    <link rel="icon" type="image/x-icon" href="https://cdn-icons-png.flaticon.com/512/25/25613.png">
 </head>
-
 <body> 
-    <div id="map" style="height: 1000px;">
-         
-    </div>
+    <div id="map" style="height: 1000px;"></div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/leaflet.js" integrity="sha512-Dqm3h1Y4qiHUjbhxTuBGQsza0Tfppn53SHlu/uj1f+RT+xfShfe7r6czRf5r2NmllO2aKx+tYJgoxboOkn1Scg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" integrity="sha384-mkQ3/7FUtcGyoppY6bz/PORYoGqOl7/aSUMn2ymDOJcapfS6PHqxhRTMh1RR0Q6+" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/leaflet-geosearch@3.3.2/dist/bundle.min.js"></script>
+
     <script>
-     const socket = io();
+        const socket = io();
 
-// Check if geolocation is supported
-if (navigator.geolocation) {
-    // Initialize the map with a default view
-    const map = L.map("map").setView([0, 0], 13);
+        // Check if geolocation is supported
+        if (navigator.geolocation) {
+            // Initialize the map with a default view
+            const map = L.map("map").setView([0, 0], 13);
 
-    // Add OpenStreetMap tile layer
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
+            // Add OpenStreetMap tile layer
+            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            }).addTo(map);
 
-    // Create a marker (initially at 0,0)
-    let marker = L.marker([0, 0]).addTo(map).bindPopup("Your current location").openPopup();
+            // Create a marker (initially at 0,0)
+            let marker = L.marker([0, 0]).addTo(map).bindPopup("Your current location").openPopup();
 
-    // Watch position for real-time updates
-    navigator.geolocation.watchPosition(
-        (position) => {
-            const { latitude, longitude } = position.coords;
+            // Watch position for real-time updates
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
 
-            console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
+                    console.log(`Latitude: ${latitude}, Longitude: ${longitude}`);
 
-            // Update marker's position and map view
+                    // Update marker's position and map view
+                    marker.setLatLng([latitude, longitude]);
+                    map.setView([latitude, longitude], 13);
+
+                    // Send location to the server
+                    socket.emit("send-location", { latitude, longitude });
+                },
+                (error) => {
+                    console.error("Error getting location:", error);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0,
+                }
+            );
+        } else {
+            console.error("Geolocation is not supported by your browser.");
+        }
+
+        // Update the map when receiving location updates from the server
+        socket.on("update-location", ({ latitude, longitude }) => {
+            console.log(`Updated location from server: Latitude ${latitude}, Longitude ${longitude}`);
             marker.setLatLng([latitude, longitude]);
             map.setView([latitude, longitude], 13);
+        });
 
-            // Send location to the server
-            socket.emit("send-location", { latitude, longitude });
-        },
-        (error) => {
-            console.error("Error getting location:", error);
-        },
-        {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0,
-        }
-    );
-} else {
-    console.error("Geolocation is not supported by your browser.");
-}
+        // Add search control using Leaflet-Geosearch
+        const provider = new window.GeoSearch.OpenStreetMapProvider();
+        const searchControl = new window.GeoSearch.GeoSearchControl({
+            provider: provider,
+            style: "bar", // Optional, can be "button" or "bar"
+            autoComplete: true,
+            autoCompleteDelay: 250,
+            showMarker: true, // Adds a marker on the searched location
+            marker: {
+                icon: new L.Icon.Default(),
+                draggable: false,
+            },
+            retainZoomLevel: false,
+            animateZoom: true,
+            autoClose: true,
+            searchLabel: "Enter a location",
+            keepResult: true,
+        });
 
-// Update the map when receiving location updates from the server
-socket.on("update-location", ({ latitude, longitude }) => {
-    console.log(`Updated location from server: Latitude ${latitude}, Longitude ${longitude}`);
-    marker.setLatLng([latitude, longitude]);
-    map.setView([latitude, longitude], 13);
-});
+        // Add the search control to the map
+        map.addControl(searchControl);
 
+        // Listen for search results and update the map
+        map.on("geosearch/showlocation", (result) => {
+            const { x: longitude, y: latitude, label } = result.location;
+
+            console.log(`Searched location: ${label} (Latitude: ${latitude}, Longitude: ${longitude})`);
+
+            // Move the map and marker to the searched location
+            marker.setLatLng([latitude, longitude]).bindPopup(label).openPopup();
+            map.setView([latitude, longitude], 13);
+        });
 
     </script>
 </body>
